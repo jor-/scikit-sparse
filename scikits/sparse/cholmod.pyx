@@ -29,8 +29,8 @@
 # SUCH DAMAGE.
 
 import warnings
-cimport stdlib
-cimport python as py
+cimport libc.stdlib
+cimport cpython as py
 import numpy as np
 cimport numpy as np
 from scipy import sparse
@@ -72,7 +72,7 @@ cdef inline np.ndarray set_base(np.ndarray arr, object base):
     hack.base = <void *> base
     return arr
 
-cdef extern from "suitesparse/cholmod.h":
+cdef extern from "cholmod.h":
     cdef enum:
         CHOLMOD_INT
         CHOLMOD_PATTERN, CHOLMOD_REAL, CHOLMOD_COMPLEX
@@ -304,27 +304,27 @@ cdef class Common(object):
             self._xtype = CHOLMOD_REAL
         cholmod_start(&self._common)
         self._common.print_ = 0
-        self._common.error_handler = <void (*)(int, char *, int, char *)>_error_handler
+        self._common.error_handler = <void (*)(int, const char *, int, const char *)>_error_handler
 
     def __dealloc__(self):
         cholmod_finish(&self._common)
 
     # Debugging:
     def _print(self):
-        print cholmod_check_common(&self._common)
+        print(cholmod_check_common(&self._common))
         name = repr(self)
         return cholmod_print_common(name, &self._common)
         
     def _print_sparse(self, name, symmetric, matrix):
         cdef cholmod_sparse * m
         ref = self._view_sparse(matrix, symmetric, &m)
-        print cholmod_check_sparse(m, &self._common)
+        print(cholmod_check_sparse(m, &self._common))
         return cholmod_print_sparse(m, name, &self._common)
 
     def _print_dense(self, name, matrix):
         cdef cholmod_dense * m
         ref = self._view_dense(matrix, &m)
-        print cholmod_check_dense(m, &self._common)
+        print(cholmod_check_dense(m, &self._common))
         return cholmod_print_dense(m, name, &self._common)
 
     ##########
@@ -358,7 +358,7 @@ cdef class Common(object):
         cdef np.ndarray indptr = _require_1d_integer(m.indptr)
         cdef np.ndarray indices = _require_1d_integer(m.indices)
         cdef np.ndarray data = self._cast(m.data)
-        cdef cholmod_sparse * out = <cholmod_sparse *> stdlib.malloc(sizeof(cholmod_sparse))
+        cdef cholmod_sparse * out = <cholmod_sparse *> libc.stdlib.malloc(sizeof(cholmod_sparse))
         try:
             out.nrow, out.ncol = m.shape
             out.nzmax = m.nnz
@@ -377,7 +377,7 @@ cdef class Common(object):
             outp[0] = out
             return (indptr, indices, data)
         except:
-            stdlib.free(out)
+            libc.stdlib.free(out)
             raise
 
     # This returns a Python object which holds the reference count for the
@@ -387,7 +387,7 @@ cdef class Common(object):
         if m.ndim != 2:
             raise CholmodError, "array has %s dimensions (expected 2)" % m.ndim
         m = self._cast(m)
-        cdef cholmod_dense * out = <cholmod_dense *> stdlib.malloc(sizeof(cholmod_dense))
+        cdef cholmod_dense * out = <cholmod_dense *> libc.stdlib.malloc(sizeof(cholmod_dense))
         try:
             out.nrow = m.shape[0]
             out.ncol = m.shape[1]
@@ -399,7 +399,7 @@ cdef class Common(object):
             outp[0] = out
             return m
         except:
-            stdlib.free(out)
+            libc.stdlib.free(out)
             raise
 
 cdef object factor_secret_handshake = object()
