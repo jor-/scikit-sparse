@@ -121,14 +121,17 @@ cdef extern from "cholmod.h":
 
     ctypedef struct cholmod_factor:
         size_t n
+        size_t minor
         void * Perm
         int itype
         int xtype
         int is_ll, is_super, is_monotonic
         size_t xsize, nzmax, nsuper
-        void * x, * p
+        void * x
+        void * p
         void * super_ "super"
-        void * pi, * px
+        void * pi
+        void * px
     int cholmod_free_factor(cholmod_factor **, cholmod_common *) except? 0
     cholmod_factor * cholmod_copy_factor(cholmod_factor *, cholmod_common *) except? NULL
 
@@ -162,6 +165,12 @@ cdef class Factor
 
 class CholmodError(Exception):
     pass
+
+class CholmodNotPositiveDefiniteError(CholmodError):
+    def __init__(self, message, column=None, factor=None):
+        super().__init__(message)
+        self.column = column
+        self.factor = factor
 
 class CholmodWarning(UserWarning):
     pass
@@ -443,7 +452,7 @@ cdef class Factor(object):
         cholmod_factorize_p(c_A, c_beta, NULL, 0,
                             self._factor, &self._common._common)
         if self._common._common.status == CHOLMOD_NOT_POSDEF:
-            raise CholmodError, "Matrix is not positive definite"
+            raise CholmodNotPositiveDefiniteError("Matrix is not positive definite", self._factor.minor, self)
 
     def _clone(self):
         cdef cholmod_factor * c_clone = cholmod_copy_factor(self._factor,
