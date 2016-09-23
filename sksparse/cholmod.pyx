@@ -223,14 +223,17 @@ cdef int _complex_typenum = np.NPY_COMPLEX128
 cdef object _complex_py_dtype = np.dtype(np.complex128)
 assert 2 * sizeof(double) == _complex_py_dtype.itemsize == 16
 
-cdef _require_1d_integer(a):
-    if a.dtype.itemsize != _integer_py_dtype.itemsize:
+cdef _require_1d_integer(a, dtype):
+    dtype = np.dtype(dtype)
+    if a.dtype.itemsize != dtype.itemsize:
         warnings.warn("array contains %s bit integers; "
-                      "this will be slower than using %s bit integers"
+                      "but %s bit integers are needed; "
+                      "slowing down due to converting"
                       % (a.dtype.itemsize * 8,
-                         _integer_py_dtype.itemsize * 8),
+                         dtype.itemsize * 8),
                       CholmodTypeConversionWarning)
-    a = np.ascontiguousarray(a, dtype=_integer_py_dtype)
+    a = np.ascontiguousarray(a, dtype=dtype)
+    assert a.dtype == dtype
     assert a.ndim == 1
     return a
 
@@ -238,7 +241,7 @@ cdef _require_1d_integer(a):
 # Cholmod -> Python conversion:
 ##########
 
-cdef int _np_typenum_for(int xtype):
+cdef int _np_typenum_for_data(int xtype):
     if xtype == CHOLMOD_COMPLEX:
         return _complex_typenum
     elif xtype == CHOLMOD_REAL:
@@ -246,8 +249,19 @@ cdef int _np_typenum_for(int xtype):
     else:
         raise CholmodError("cholmod->numpy type conversion failed")
 
-cdef type _np_dtype_for(int xtype):
-    return np.PyArray_TypeObjectFromType(_np_typenum_for(xtype))
+cdef type _np_dtype_for_data(int xtype):
+    return np.PyArray_TypeObjectFromType(_np_typenum_for_data(xtype))
+
+cdef int _np_typenum_for_index(int itype):
+    if itype == CHOLMOD_INT:
+        return _integer_typenum
+    elif itype == CHOLMOD_LONG:
+        return _long_typenum
+    else:
+        raise CholmodError("cholmod->numpy type conversion failed")
+
+cdef type _np_dtype_for_index(int itype):
+    return np.PyArray_TypeObjectFromType(_np_typenum_for_index(itype))
 
 cdef class _SparseCleanup:
     cdef cholmod_sparse * _sparse
@@ -278,15 +292,15 @@ cdef _py_sparse(cholmod_sparse * m, Common common):
     assert m.itype == common._common.itype
 
     cdef np.ndarray indptr = np.PyArray_SimpleNewFromData(
-        1, [m.ncol + 1], _integer_typenum, m.p)
+        1, [m.ncol + 1], _np_typenum_for_index(m.itype), m.p)
     PyArray_ENABLEFLAGS(indptr, np.NPY_WRITEABLE)
     np.set_array_base(indptr, cleaner)
     cdef np.ndarray indices = np.PyArray_SimpleNewFromData(
-        1, [m.nzmax], _integer_typenum, m.i)
+        1, [m.nzmax], _np_typenum_for_index(m.itype), m.i)
     PyArray_ENABLEFLAGS(indices, np.NPY_WRITEABLE)
     np.set_array_base(indices, cleaner)
     cdef np.ndarray data = np.PyArray_SimpleNewFromData(
-        1, [m.nzmax], _np_typenum_for(m.xtype), m.x)
+        1, [m.nzmax], _np_typenum_for_data(m.xtype), m.x)
     PyArray_ENABLEFLAGS(data, np.NPY_WRITEABLE)
     np.set_array_base(data, cleaner)
 
@@ -316,7 +330,7 @@ cdef _py_dense(cholmod_dense * m, Common common):
     cleaner._common = common
 
     cdef np.ndarray out = np.PyArray_SimpleNewFromData(
-        1, [m.ncol * m.nrow], _np_typenum_for(m.xtype), m.x).reshape((m.ncol, m.nrow)).T
+        1, [m.ncol * m.nrow], _np_typenum_for_data(m.xtype), m.x).reshape((m.ncol, m.nrow)).T
     PyArray_ENABLEFLAGS(out, np.NPY_WRITEABLE)
     np.set_array_base(out, cleaner)
 
@@ -433,8 +447,8 @@ cdef class Common:
         if symmetric and m.shape[0] != m.shape[1]:
             raise CholmodError("supposedly symmetric matrix is not square!")
         m.sort_indices()
-        cdef np.ndarray indptr = _require_1d_integer(m.indptr)
-        cdef np.ndarray indices = _require_1d_integer(m.indices)
+        cdef np.ndarray indptr = _require_1d_integer(m.indptr, _np_dtype_for_index(self._common.itype))
+        cdef np.ndarray indices = _require_1d_integer(m.indices, _np_dtype_for_index(self._common.itype))
         cdef np.ndarray data = self._cast(m.data)
         out.nrow, out.ncol = m.shape
         out.nzmax = m.nnz
@@ -625,7 +639,7 @@ cdef class Factor:
         assert self._factor.itype == self._common._common.itype
 
         cdef np.ndarray out = np.PyArray_SimpleNewFromData(
-            1, [self._factor.n], _integer_typenum, self._factor.Perm)
+            1, [self._factor.n], _np_typenum_for_index(self._factor.itype), self._factor.Perm)
         np.set_array_base(out, self)
 
         return out
@@ -689,7 +703,7 @@ cdef class Factor:
 
         cdef np.ndarray x = np.PyArray_SimpleNewFromData(
             1, [self._factor.xsize if self._factor.is_super else self._factor.nzmax],
-            _np_typenum_for(self._factor.xtype), self._factor.x)
+            _np_typenum_for_data(self._factor.xtype), self._factor.x)
 
         cdef size_t i
         cdef np.npy_intp n
@@ -702,7 +716,7 @@ cdef class Factor:
             # x vector. This is not documented in the CHOLMOD user-guide, or
             # anywhere else as far as I can tell; I got the details from
             # CVXOPT's C/cholmod.c.
-            d = np.empty(self._factor.n, dtype=_np_dtype_for(self._factor.xtype))
+            d = np.empty(self._factor.n, dtype=_np_dtype_for_data(self._factor.xtype))
             filled = 0
             for i in xrange(self._factor.nsuper):
                 ncols = super_[i + 1] - super_[i]
@@ -722,7 +736,7 @@ cdef class Factor:
             # sentinel), so we just create a view onto those:
             assert self._factor.itype == self._common._common.itype
             p = np.PyArray_SimpleNewFromData(
-                1, [self._factor.n], _integer_typenum, self._factor.p)
+                1, [self._factor.n], _np_typenum_for_index(self._factor.itype), self._factor.p)
 
             d = x[p]
         if self._factor.is_ll:
@@ -930,7 +944,7 @@ cdef class Factor:
         """
 
         return self(sparse.eye(self._factor.n, self._factor.n,
-                               dtype=_np_dtype_for(self._factor.xtype),
+                               dtype=_np_dtype_for_data(self._factor.xtype),
                                format="csc"))
 
 def analyze(A, mode="auto", ordering_method="default", use_long=None):
