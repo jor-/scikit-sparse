@@ -47,7 +47,7 @@ cdef extern from "numpy/arrayobject.h":
 
 cdef extern from "cholmod.h":
     cdef enum:
-        CHOLMOD_INT
+        CHOLMOD_INT, CHOLMOD_INTLONG, CHOLMOD_LONG
         CHOLMOD_PATTERN, CHOLMOD_REAL, CHOLMOD_COMPLEX
         CHOLMOD_DOUBLE
         CHOLMOD_AUTO, CHOLMOD_SIMPLICIAL, CHOLMOD_SUPERNODAL
@@ -62,6 +62,8 @@ cdef extern from "cholmod.h":
     ctypedef struct cholmod_common:
         int supernodal
         int status
+        int itype
+        int dtype
         int nmethods
         int postorder
         int print
@@ -69,9 +71,16 @@ cdef extern from "cholmod.h":
         void (*error_handler)(int status, const char * file, int line, const char * msg)
 
     int cholmod_start(cholmod_common *) except? 0
+    int cholmod_l_start(cholmod_common *) except? 0
+
     int cholmod_finish(cholmod_common *) except? 0
+    int cholmod_l_finish(cholmod_common *) except? 0
+
     int cholmod_check_common(cholmod_common *) except? 0
-    int cholmod_print_common(char *, cholmod_common *) except? 0
+    int cholmod_l_check_common(cholmod_common *) except? 0
+
+    int cholmod_print_common(const char *, cholmod_common *) except? 0
+    int cholmod_l_print_common(const char *, cholmod_common *) except? 0
 
     ctypedef struct cholmod_sparse:
         size_t nrow, ncol, nzmax
@@ -86,18 +95,29 @@ cdef extern from "cholmod.h":
         int packed
 
     int cholmod_free_sparse(cholmod_sparse **, cholmod_common *) except? 0
+    int cholmod_l_free_sparse(cholmod_sparse **, cholmod_common *) except? 0
+
     int cholmod_check_sparse(cholmod_sparse *, cholmod_common *) except? 0
-    int cholmod_print_sparse(cholmod_sparse *, char *, cholmod_common *) except? 0
+    int cholmod_l_check_sparse(cholmod_sparse *, cholmod_common *) except? 0
+
+    int cholmod_print_sparse(cholmod_sparse *, const char *, cholmod_common *) except? 0
+    int cholmod_l_print_sparse(cholmod_sparse *, const char *, cholmod_common *) except? 0
 
     ctypedef struct cholmod_dense:
         size_t nrow, ncol, nzmax
         size_t d
         void * x
-        int xtype, dtype
+        int xtype
+        int dtype
 
     int cholmod_free_dense(cholmod_dense **, cholmod_common *) except? 0
+    int cholmod_l_free_dense(cholmod_dense **, cholmod_common *) except? 0
+
     int cholmod_check_dense(cholmod_dense *, cholmod_common *) except? 0
-    int cholmod_print_dense(cholmod_dense *, char *, cholmod_common *) except? 0
+    int cholmod_l_check_dense(cholmod_dense *, cholmod_common *) except? 0
+
+    int cholmod_print_dense(cholmod_dense *, const char *, cholmod_common *) except? 0
+    int cholmod_l_print_dense(cholmod_dense *, const char *, cholmod_common *) except? 0
 
     ctypedef struct cholmod_factor:
         size_t n
@@ -111,33 +131,68 @@ cdef extern from "cholmod.h":
         void * super_ "super"
         void * pi
         void * px
+
     int cholmod_free_factor(cholmod_factor **, cholmod_common *) except? 0
+    int cholmod_l_free_factor(cholmod_factor **, cholmod_common *) except? 0
+
+    int cholmod_check_factor(cholmod_factor *, cholmod_common *) except? 0
+    int cholmod_l_check_factor(cholmod_factor *, cholmod_common *) except? 0
+
+    int cholmod_print_factor(cholmod_factor *, const char *, cholmod_common *) except? 0
+    int cholmod_l_print_factor(cholmod_factor *, const char *, cholmod_common *) except? 0
+    
     cholmod_factor * cholmod_copy_factor(cholmod_factor *, cholmod_common *) except? NULL
+    cholmod_factor * cholmod_l_copy_factor(cholmod_factor *, cholmod_common *) except? NULL
 
     cholmod_factor * cholmod_analyze(cholmod_sparse *, cholmod_common *) except? NULL
+    cholmod_factor * cholmod_l_analyze(cholmod_sparse *, cholmod_common *) except? NULL
+    
     int cholmod_factorize_p(cholmod_sparse *, double beta[2],
                             int * fset, size_t fsize,
                             cholmod_factor *,
                             cholmod_common *) except? 0
+    int cholmod_l_factorize_p(cholmod_sparse *, double beta[2],
+                              long * fset, size_t fsize,
+                              cholmod_factor *,
+                              cholmod_common *) except? 0
 
     cholmod_sparse * cholmod_submatrix(cholmod_sparse *,
                                        int * rset, int rsize,
                                        int * cset, int csize,
                                        int values, int sorted,
                                        cholmod_common *) except? NULL
+    cholmod_sparse * cholmod_l_submatrix(cholmod_sparse *,
+                                         long * rset, long rsize,
+                                         long * cset, long csize,
+                                         int values, int sorted,
+                                         cholmod_common *) except? NULL
+
     int cholmod_updown(int update, cholmod_sparse *, cholmod_factor *,
                        cholmod_common *) except? 0
-
+    int cholmod_l_updown(int update, cholmod_sparse *, cholmod_factor *,
+                         cholmod_common *) except? 0
+    
     cholmod_dense * cholmod_solve(int, cholmod_factor *,
                                   cholmod_dense *, cholmod_common *) except? NULL
+    cholmod_dense * cholmod_l_solve(int, cholmod_factor *,
+                                    cholmod_dense *, cholmod_common *) except? NULL
+
     cholmod_sparse * cholmod_spsolve(int, cholmod_factor *,
                                      cholmod_sparse *, cholmod_common *) except? NULL
-
+    cholmod_sparse * cholmod_l_spsolve(int, cholmod_factor *,
+                                       cholmod_sparse *, cholmod_common *) except? NULL
+    
     int cholmod_change_factor(int to_xtype, int to_ll, int to_super,
                               int to_packed, int to_monotonic,
                               cholmod_factor *, cholmod_common *) except? 0
+    int cholmod_l_change_factor(int to_xtype, int to_ll, int to_super,
+                                int to_packed, int to_monotonic,
+                                cholmod_factor *, cholmod_common *) except? 0
+
     cholmod_sparse * cholmod_factor_to_sparse(cholmod_factor *,
                                               cholmod_common *) except? NULL
+    cholmod_sparse * cholmod_l_factor_to_sparse(cholmod_factor *,
+                                                cholmod_common *) except? NULL
 
 cdef class Common
 cdef class Factor
@@ -277,9 +332,11 @@ cdef class Common:
         else:
             self._xtype = CHOLMOD_REAL
         cholmod_start(&self._common)
+        print(self._common.itype)
         self._common.print = 0
         self._common.error_handler = (
             <void (*)(int, const char *, int, const char *)>_error_handler)
+        assert self._common.itype == 0
 
     def __dealloc__(self):
         cholmod_finish(&self._common)
