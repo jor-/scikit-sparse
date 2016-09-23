@@ -275,7 +275,7 @@ cdef _py_sparse(cholmod_sparse * m, Common common):
     cdef _SparseCleanup cleaner = _SparseCleanup()
     cleaner._sparse = m
     cleaner._common = common
-    assert m.itype == CHOLMOD_INT
+    assert m.itype == common._common.itype
 
     cdef np.ndarray indptr = np.PyArray_SimpleNewFromData(
         1, [m.ncol + 1], _integer_typenum, m.p)
@@ -445,7 +445,7 @@ cdef class Common:
             out.stype = -1
         else:
             out.stype = 0
-        out.itype = CHOLMOD_INT
+        out.itype = self._common.itype
         out.dtype = CHOLMOD_DOUBLE
         out.xtype = self._xtype
         out.sorted = 1
@@ -542,6 +542,8 @@ cdef class Factor:
         cdef Factor clone = Factor(factor_secret_handshake)
         clone._common = self._common
         clone._factor = c_clone
+        assert self._factor.itype == clone._factor.itype == self._common._common.itype
+        assert self._factor.xtype == clone._factor.xtype
         return clone
 
     def cholesky(self, A, beta=0):
@@ -620,7 +622,7 @@ cdef class Factor:
         (or similar for AA')."""
         if self._factor.Perm is NULL:
             raise CholmodError("you must analyze a matrix first")
-        assert self._factor.itype == CHOLMOD_INT
+        assert self._factor.itype == self._common._common.itype
 
         cdef np.ndarray out = np.PyArray_SimpleNewFromData(
             1, [self._factor.n], _integer_typenum, self._factor.Perm)
@@ -718,6 +720,7 @@ cdef class Factor:
             # The ->p array actually has n+1 entries, but only the first n
             # entries actually point to real columns (the last entry is a
             # sentinel), so we just create a view onto those:
+            assert self._factor.itype == self._common._common.itype
             p = np.PyArray_SimpleNewFromData(
                 1, [self._factor.n], _integer_typenum, self._factor.p)
 
