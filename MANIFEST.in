@@ -6,3 +6,4 @@ prune build dist
 global-exclude *~ *.so *.pyc
 include versioneer.py
 include sksparse/_version.py
+include sksparse/cholmod_backward_compatible.h
